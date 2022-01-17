@@ -234,7 +234,6 @@ class WandbLogger(object):
             
     def log_checkpoints(self):
         output_dir = self.args.output_dir
-        print(output_dir)
         model_artifact = self._wandb.Artifact(
             self._wandb.run.id + "_model", type="model"
         )
