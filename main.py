@@ -32,6 +32,8 @@ import utils
 import models.convnext
 import models.convnext_isotropic
 
+import wandb
+
 def str2bool(v):
     """
     Converts string to bool type; enables command line 
@@ -191,6 +193,14 @@ def get_args_parser():
     parser.add_argument('--use_amp', type=str2bool, default=False, 
                         help="Use PyTorch's AMP (Automatic Mixed Precision) or not")
 
+    # Weights and Biases arguments
+    parser.add_argument('--enable_wandb', type=str2bool, default=False,
+                        help="enable logging to Weights and Biases")
+    parser.add_argument('--project', default='convnext', type=str,
+                        help="The name of the W&B project where you're sending the new run.")
+    parser.add_argument('--wandb_ckpt', type=str2bool, default=False,
+                        help="Save model checkpoints as W&B Artifacts.")
+
     return parser
 
 def main(args):
@@ -233,6 +243,11 @@ def main(args):
         log_writer = utils.TensorboardLogger(log_dir=args.log_dir)
     else:
         log_writer = None
+
+    if global_rank == 0:
+        wandb_logger = utils.WandbLogger(args)
+    else:
+        wandb_logger = None
 
     data_loader_train = torch.utils.data.DataLoader(
         dataset_train, sampler=sampler_train,
@@ -392,12 +407,16 @@ def main(args):
             num_training_steps_per_epoch=num_training_steps_per_epoch, update_freq=args.update_freq,
             use_amp=args.use_amp
         )
+
         if args.output_dir and args.save_ckpt:
             if (epoch + 1) % args.save_ckpt_freq == 0 or epoch + 1 == args.epochs:
                 utils.save_model(
                     args=args, model=model, model_without_ddp=model_without_ddp, optimizer=optimizer,
                     loss_scaler=loss_scaler, epoch=epoch, model_ema=model_ema)
+
+        # Validation
         if data_loader_val is not None:
+            print("DOING VALIDATION")
             test_stats = evaluate(data_loader_val, model, device, use_amp=args.use_amp)
             print(f"Accuracy of the model on the {len(dataset_val)} test images: {test_stats['acc1']:.1f}%")
             if max_accuracy < test_stats["acc1"]:
@@ -437,11 +456,18 @@ def main(args):
                          'epoch': epoch,
                          'n_parameters': n_parameters}
 
+        if wandb_logger:
+            wandb_logger.log_metrics(log_stats)
+
         if args.output_dir and utils.is_main_process():
             if log_writer is not None:
                 log_writer.flush()
             with open(os.path.join(args.output_dir, "log.txt"), mode="a", encoding="utf-8") as f:
                 f.write(json.dumps(log_stats) + "\n")
+
+    # Save model checkpoints as wandb Artifacts
+    if wandb_logger and args.wandb_ckpt and args.save_ckpt and args.output_dir:
+        wandb_logger.log_checkpoints()
 
     total_time = time.time() - start_time
     total_time_str = str(datetime.timedelta(seconds=int(total_time)))
