@@ -212,6 +212,11 @@ class WandbLogger(object):
                 config=args
             )
 
+        if args.log_eval:
+            self.eval_table = self._wandb.Table(columns=['images', 'targets', 'predictions'])
+        else:
+            self.eval_table = None
+
     def log_metrics(self, metrics, commit=True):
         """
         Log train/test metrics onto W&B.
@@ -240,6 +245,22 @@ class WandbLogger(object):
 
         model_artifact.add_dir(output_dir)
         self._wandb.log_artifact(model_artifact, aliases=["latest", "best"])
+
+    def add_eval_data(self, data):
+        if self.eval_table:
+            images = data[0].cpu().numpy()
+            target = data[1].cpu().numpy()
+            output = np.argmax(data[2].cpu().numpy(), axis=1)
+            assert len(images) == len(target) == len(output)
+            
+            for img, gt, pred in zip(images, target, output):
+                self.eval_table.add_data(
+                    self._wandb.Image(np.moveaxis(img, 0, -1)), gt, pred
+                )
+
+    def log_eval_table(self):
+        if self.eval_table:
+            self._wandb.log({'eval_table': self.eval_table})
 
 
 def setup_for_distributed(is_master):

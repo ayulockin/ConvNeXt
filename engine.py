@@ -124,7 +124,7 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
     return {k: meter.global_avg for k, meter in metric_logger.meters.items()}
 
 @torch.no_grad()
-def evaluate(data_loader, model, device, use_amp=False):
+def evaluate(data_loader, model, device, use_amp=False, wandb_logger=None, log_num_samples=1000):
     criterion = torch.nn.CrossEntropyLoss()
 
     metric_logger = utils.MetricLogger(delimiter="  ")
@@ -133,6 +133,7 @@ def evaluate(data_loader, model, device, use_amp=False):
     # switch to evaluation mode
     model.eval()
     i = 0
+    num_samples = 0
     for batch in metric_logger.log_every(data_loader, 10, header):
         i += 1
         images = batch[0]
@@ -156,6 +157,15 @@ def evaluate(data_loader, model, device, use_amp=False):
         metric_logger.update(loss=loss.item())
         metric_logger.meters['acc1'].update(acc1.item(), n=batch_size)
         metric_logger.meters['acc5'].update(acc5.item(), n=batch_size)
+
+        if wandb_logger:
+            if num_samples < log_num_samples:
+                wandb_logger.add_eval_data((images, target, output))
+                num_samples+=len(images)
+
+    if wandb_logger:
+        wandb_logger.log_eval_table()
+
     # gather the stats from all processes
     metric_logger.synchronize_between_processes()
     print('* Acc@1 {top1.global_avg:.3f} Acc@5 {top5.global_avg:.3f} loss {losses.global_avg:.3f}'

@@ -198,6 +198,8 @@ def get_args_parser():
                         help="The name of the W&B project where you're sending the new run.")
     parser.add_argument('--wandb_ckpt', type=str2bool, default=False,
                         help="Save model checkpoints as W&B Artifacts.")
+    parser.add_argument('--log_eval', type=str2bool, default=False,
+                        help="Log model prediction as W&B Tables when in eval mode")
 
     return parser
 
@@ -382,7 +384,7 @@ def main(args):
 
     if args.eval:
         print(f"Eval only mode")
-        test_stats = evaluate(data_loader_val, model, device, use_amp=args.use_amp)
+        test_stats = evaluate(data_loader_val, model, device, use_amp=args.use_amp, wandb_logger=wandb_logger)
         print(f"Accuracy of the network on {len(dataset_val)} test images: {test_stats['acc1']:.5f}%")
         return
 
